@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { showToast } from "../components/Toast";
 import { motion } from "framer-motion";
 import { User, Save, Loader2, Sun, Moon } from "lucide-react";
 import { useAuthStore, useThemeStore } from "../store";
@@ -49,7 +50,7 @@ export default function Profile() {
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch { alert("Failed to save."); }
+    } catch { showToast("Failed to save.", "error"); }
     finally { setSaving(false); }
   };
 

@@ -56,7 +56,7 @@ export default function AntigravityScore({ score, compact = false }: { score: Sc
       {/* Main Score Ring */}
       <div className="flex items-center gap-8 mb-8">
         <div className="relative w-28 h-28 shrink-0">
-          <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+          <svg viewBox="0 0 100 100" className="score-circle w-full h-full -rotate-90">
             <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
             <motion.circle
               cx="50" cy="50" r="42" fill="none"

@@ -1,0 +1,2 @@
+src/components/MapView.tsx(75,17): error TS1127: Invalid character.
+src/components/MapView.tsx(361,1): error TS1160: Unterminated template literal.

@@ -1,0 +1,30 @@
+src/pages/Home.tsx(452,19): error TS2322: Type '(el: HTMLDivElement) => HTMLDivElement' is not assignable to type 'Ref<HTMLDivElement>'.
+  Type '(el: HTMLDivElement) => HTMLDivElement' is not assignable to type '(instance: HTMLDivElement) => void | (() => VoidOrUndefinedOnly)'.
+    Type 'HTMLDivElement' is not assignable to type 'void | (() => VoidOrUndefinedOnly)'.
+src/pages/Planner.tsx(859,27): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: InteractiveMapProps): InteractiveMap', gave the following error.
+    Type '{ children: Element[]; ref: RefObject<any>; initialViewState: { longitude: number; latitude: number; zoom: number; }; mapStyle: string; mapboxAccessToken: any; style: { width: string; height: string; }; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<InteractiveMap> & Readonly<InteractiveMapProps>'.
+      Property 'initialViewState' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<InteractiveMap> & Readonly<InteractiveMapProps>'.
+  Overload 2 of 2, '(props: InteractiveMapProps, context: any): InteractiveMap', gave the following error.
+    Type '{ children: Element[]; ref: RefObject<any>; initialViewState: { longitude: number; latitude: number; zoom: number; }; mapStyle: string; mapboxAccessToken: any; style: { width: string; height: string; }; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<InteractiveMap> & Readonly<InteractiveMapProps>'.
+      Property 'initialViewState' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<InteractiveMap> & Readonly<InteractiveMapProps>'.
+src/pages/Planner.tsx(866,103): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: MarkerProps): Marker', gave the following error.
+    Type '{ longitude: number; latitude: number; color: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+      Property 'color' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+  Overload 2 of 2, '(props: MarkerProps, context: any): Marker', gave the following error.
+    Type '{ longitude: number; latitude: number; color: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+      Property 'color' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+src/pages/Planner.tsx(867,99): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: MarkerProps): Marker', gave the following error.
+    Type '{ longitude: number; latitude: number; color: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+      Property 'color' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+  Overload 2 of 2, '(props: MarkerProps, context: any): Marker', gave the following error.
+    Type '{ longitude: number; latitude: number; color: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+      Property 'color' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<Marker> & Readonly<MarkerProps>'.
+src/pages/Planner.tsx(910,103): error TS2345: Argument of type '(prev: OptimizedTripPlan) => { itinerary: unknown[]; destination: string; bestRoute: BestRoute; expenses: Expenses; foodSuggestions: FoodSuggestions; ... 7 more ...; cities?: TripCity[]; }' is not assignable to parameter of type 'SetStateAction<OptimizedTripPlan>'.
+  Type '(prev: OptimizedTripPlan) => { itinerary: unknown[]; destination: string; bestRoute: BestRoute; expenses: Expenses; foodSuggestions: FoodSuggestions; ... 7 more ...; cities?: TripCity[]; }' is not assignable to type '(prevState: OptimizedTripPlan) => OptimizedTripPlan'.
+    Call signature return types '{ itinerary: unknown[]; destination: string; bestRoute: BestRoute; expenses: Expenses; foodSuggestions: FoodSuggestions; tips: string[]; ecoImpact: string; hotelSuggestion?: string; ... 4 more ...; cities?: TripCity[]; }' and 'OptimizedTripPlan' are incompatible.
+      The types of 'itinerary' are incompatible between these types.
+        Type 'unknown[]' is not assignable to type 'ItineraryDay[]'.
+          Type '{}' is missing the following properties from type 'ItineraryDay': day, title, activities

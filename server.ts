@@ -14,6 +14,38 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-for-dev";
 const MODEL = "llama-3.3-70b-versatile";
 
+// ── Rate Limiter (in‑memory, per IP) ──────────────────────────────────────────
+const rateLimitMap = new Map<string, { count: number; reset: number }>();
+const RATE_LIMIT = 10;       // max requests per window
+const RATE_WINDOW = 60_000;  // 60 seconds
+
+function rateLimit(req: any, res: any): boolean {
+  const ip = req.ip || req.socket?.remoteAddress || "unknown";
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.reset) {
+    rateLimitMap.set(ip, { count: 1, reset: now + RATE_WINDOW });
+    return false; // not limited
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT) {
+    res.status(429).json({ error: "Too many requests. Please wait a minute." });
+    return true; // limited
+  }
+  return false;
+}
+
+// ── Validation helper ─────────────────────────────────────────────────────────
+function validateBody(req: any, res: any, fields: string[]): boolean {
+  for (const f of fields) {
+    if (req.body[f] === undefined || req.body[f] === null || req.body[f] === "") {
+      res.status(400).json({ error: `Missing required field: ${f}` });
+      return false;
+    }
+  }
+  return true;
+}
+
 // ── Auth Middleware ──────────────────────────────────────────────────────────
 
 function authMiddleware(req: any, res: any, next: any) {
@@ -31,17 +63,95 @@ function authMiddleware(req: any, res: any, next: any) {
 
 // ── AI Helper ───────────────────────────────────────────────────────────────
 
-async function askAI(systemPrompt: string, userPrompt: string, json = true) {
-  const completion = await groq.chat.completions.create({
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    model: MODEL,
-    ...(json ? { response_format: { type: "json_object" as const } } : {}),
+const FALLBACK_MODELS = [
+  "llama3-70b-8192",
+  "mixtral-8x7b-32768",
+  "gemma2-9b-it",
+  "llama-3.3-70b-versatile", // Ultimate safety net (Guaranteed active)
+  "llama-3.1-8b-instant"     // Ultimate emergency net (Guaranteed active)
+];
+
+// Timeout wrapper for fetch calls
+const fetchWithTimeout = async (promise: Promise<any>, ms: number) => {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("API Request Timeout")), ms);
   });
-  const raw = completion.choices[0]?.message?.content || (json ? "{}" : "");
-  return json ? JSON.parse(raw) : raw;
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+};
+
+async function generateAIResponse(systemPrompt: string, userPrompt: string, json = true) {
+  if (!process.env.GROQ_API_KEY) {
+    console.error("❌ CRITICAL: GROQ_API_KEY is missing from environment variables!");
+    throw new Error("Missing GROQ_API_KEY setup in environment variables.");
+  }
+
+  const RETRIES = 2;
+  const TIMEOUT_MS = 10000;
+  const RETRY_DELAY_MS = 1000;
+
+  for (const model of FALLBACK_MODELS) {
+    // Attempt 1 + 2 retries = up to 3 iterations per model
+    for (let attempt = 0; attempt <= RETRIES; attempt++) {
+      try {
+        console.log(`🧠 [AI Engine] Using model: ${model} (Attempt ${attempt + 1}/${RETRIES + 1})`);
+        
+        const requestPromise = groq.chat.completions.create({
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          model: model,
+          ...(json ? { response_format: { type: "json_object" as const } } : {}),
+        });
+
+        // Fail fast with 10 second timeout
+        const completion = await fetchWithTimeout(requestPromise, TIMEOUT_MS) as any;
+        const raw = completion.choices[0]?.message?.content || (json ? "{}" : "");
+        console.log(`✅ [AI Engine] Success using model: ${model}`);
+        return json ? JSON.parse(raw) : raw;
+        
+      } catch (err: any) {
+        const errorType = err?.error?.code || err?.message || err?.status || "Network/Unknown Error";
+        console.error(`⚠️ [AI Engine] Error type [${errorType}] on model: ${model}`);
+
+        if (errorType === "invalid_api_key" || String(errorType).includes("invalid_api_key")) {
+           console.error("❌ CRITICAL: Invalid API Key provided.");
+           break;
+        }
+
+        const errString = String(err?.message || errorType);
+        const isRecoverable = errString.includes("rate_limit_exceeded") ||
+                              errString.includes("decommissioned") ||
+                              errString.includes("not found") ||
+                              err?.status === 429 ||
+                              err?.status === 404 ||
+                              err?.status === 400 ||
+                              errString.includes("400") ||
+                              errString.includes("Timeout") ||
+                              errString.includes("network");
+
+        if (attempt < RETRIES && isRecoverable) {
+           console.log(`⏳ [AI Engine] Retrying model ${model} in ${RETRY_DELAY_MS}ms...`);
+           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+           continue;
+        } else {
+           console.log(`📉 [AI Engine] Fallback triggered! Model ${model} failed after retries. Rotating to next available model.`);
+           break; // Move to next model
+        }
+      }
+    }
+  }
+
+  // Safe Fallback Return completely preventing App Crashes
+  console.error("❌ [AI Engine] FATAL: All fallback models in the chain failed.");
+  if (json) {
+     return {
+        success: false,
+        message: "AI service temporarily unavailable. Please try again."
+     };
+  }
+  return "AI service temporarily unavailable. Please try again.";
 }
 
 // ── Server ──────────────────────────────────────────────────────────────────
@@ -56,6 +166,108 @@ async function startServer() {
   // HEALTH
   // ═══════════════════════════════════════════════════════════════════════════
   app.get("/api/health", (_req, res) => res.json({ status: "ok", version: "2.0" }));
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PEXELS FOOD IMAGE PROXY
+  // ═══════════════════════════════════════════════════════════════════════════
+  const imageCache = new Map<string, { src: string; photographer: string }[]>();
+
+  // Simple hash to guarantee unique images per query
+  function simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }
+
+  app.get("/api/food-image", async (req, res) => {
+    try {
+      const query = (req.query.query as string) || "food";
+      const PEXELS_KEY = process.env.PEXELS_API_KEY;
+      if (!PEXELS_KEY) {
+        // Fallback to LoremFlickr (no key needed, reliable)
+        return res.json({
+          photos: [{ src: `https://loremflickr.com/600/400/${encodeURIComponent(query)},food?lock=${simpleHash(query)}`, photographer: "LoremFlickr" }]
+        });
+      }
+
+      // Check cache first
+      if (imageCache.has(query)) {
+        return res.json({ photos: imageCache.get(query) });
+      }
+
+      const response = await fetch(
+        `https://api.pexels.com/v1/search?query=${encodeURIComponent(query + " food")}&per_page=3&orientation=landscape`,
+        { headers: { Authorization: PEXELS_KEY } }
+      );
+
+      if (!response.ok) throw new Error("Pexels API error");
+      const data = await response.json() as any;
+
+      const photos = (data.photos || []).map((p: any) => ({
+        src: p.src?.medium || p.src?.small || p.src?.original,
+        photographer: p.photographer || "Unknown",
+      }));
+
+      // Cache the result
+      imageCache.set(query, photos);
+
+      res.json({ photos });
+    } catch (error) {
+      console.error("Pexels API error:", error);
+      // Fallback
+      res.json({
+        photos: [{ src: `https://loremflickr.com/600/400/${encodeURIComponent((req.query.query as string) || "food")},food?lock=${simpleHash((req.query.query as string) || "food")}`, photographer: "LoremFlickr" }]
+      });
+    }
+  });
+
+  // Batch endpoint — fetch multiple food images in one call
+  app.post("/api/food-images/batch", async (req, res) => {
+    try {
+      const { queries } = req.body as { queries: string[] };
+      if (!queries || !Array.isArray(queries)) return res.status(400).json({ error: "queries array required" });
+
+      const PEXELS_KEY = process.env.PEXELS_API_KEY;
+      const results: Record<string, string> = {};
+
+      for (const query of queries.slice(0, 20)) {
+        if (imageCache.has(query) && imageCache.get(query)!.length > 0) {
+          results[query] = imageCache.get(query)![0].src;
+          continue;
+        }
+
+        if (PEXELS_KEY) {
+          try {
+            const response = await fetch(
+              `https://api.pexels.com/v1/search?query=${encodeURIComponent(query + " food")}&per_page=1&orientation=landscape`,
+              { headers: { Authorization: PEXELS_KEY } }
+            );
+            const data = await response.json() as any;
+            const photo = data.photos?.[0];
+            if (photo) {
+              const url = photo.src?.medium || photo.src?.small;
+              results[query] = url;
+              imageCache.set(query, [{ src: url, photographer: photo.photographer }]);
+            } else {
+              results[query] = `https://loremflickr.com/600/400/${encodeURIComponent(query)},food?lock=${simpleHash(query)}`;
+            }
+          } catch {
+            results[query] = `https://loremflickr.com/600/400/${encodeURIComponent(query)},food?lock=${simpleHash(query)}`;
+          }
+        } else {
+          results[query] = `https://loremflickr.com/600/400/${encodeURIComponent(query)},food?lock=${simpleHash(query)}`;
+        }
+      }
+
+      res.json({ images: results });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch images" });
+    }
+  });
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // AUTH
@@ -173,7 +385,12 @@ RULES:
 - Mood "${mood || "balanced"}" should influence suggestions (e.g., chill = spas, adventure = trekking).`;
 
       const sys = "You are a travel budget optimization AI. Respond ONLY with valid JSON. All monetary values must be numbers. Realistic costs in INR (₹).";
-      const raw = await askAI(sys, prompt);
+      const raw = await generateAIResponse(sys, prompt);
+      
+      if (raw.success === false) {
+          return res.status(503).json(raw);
+      }
+      
       const optimized = optimizeBudget(raw, Number(budget));
       res.json(optimized);
     } catch (error) {
@@ -210,7 +427,7 @@ RULES:
 }
 Provide at least 3 scams, 3 emergency numbers, 3 health tips, 2 safe areas, 2 avoid areas. Overall score 0-100.`;
 
-      const result = await askAI("You are a travel safety analyst AI. Respond with valid JSON only.", prompt);
+      const result = await generateAIResponse("You are a travel safety analyst AI. Respond with valid JSON only.", prompt);
       res.json(result);
     } catch (error) {
       console.error("Safety scoring error:", error);
@@ -229,15 +446,30 @@ Provide at least 3 scams, 3 emergency numbers, 3 health tips, 2 safe areas, 2 av
       const prompt = `Discover the best food experiences in "${destination}" ${dietary ? `for someone with dietary preference: ${dietary}` : ''}. Budget level: ${budget || 'moderate'}. Return JSON:
 {
   "destination": "${destination}",
-  "hiddenGems": [{ "name": "", "type": "street|cafe|restaurant|hidden-gem", "cuisine": "", "avgCost": 0, "location": "", "safetyScore": 8, "mustTry": [""], "tip": "" }],
-  "budgetPicks": [{ "name": "", "type": "street", "cuisine": "", "avgCost": 0, "location": "", "safetyScore": 8, "mustTry": [""], "tip": "" }],
-  "famousSpots": [{ "name": "", "type": "restaurant", "cuisine": "", "avgCost": 0, "location": "", "safetyScore": 9, "mustTry": [""], "tip": "" }],
+  "hiddenGems": [{ "name": "", "type": "street|cafe|restaurant|hidden-gem", "cuisine": "", "avgCost": 0, "priceRange": { "min": 0, "max": 0 }, "location": "", "address": "", "openingHours": "10:00 AM - 11:00 PM", "isVeg": false, "spiceLevel": "mild|medium|hot|very-hot", "knownFor": "one sentence about what makes this place special", "ambiance": "casual|fine-dining|street-side|rooftop|cozy-cafe|family-friendly", "safetyScore": 8, "mustTry": [""], "tip": "", "imageSearch": "dish name food", "benefits": ["health benefit 1", "health benefit 2"], "reviews": [{ "user": "Name", "rating": 4.5, "comment": "review text", "date": "2024-01" }] }],
+  "budgetPicks": [{ "name": "", "type": "street", "cuisine": "", "avgCost": 0, "priceRange": { "min": 0, "max": 0 }, "location": "", "address": "", "openingHours": "", "isVeg": false, "spiceLevel": "medium", "knownFor": "", "ambiance": "street-side", "safetyScore": 8, "mustTry": [""], "tip": "", "imageSearch": "dish name food", "benefits": [""], "reviews": [{ "user": "Name", "rating": 4, "comment": "", "date": "2024-02" }] }],
+  "famousSpots": [{ "name": "", "type": "restaurant", "cuisine": "", "avgCost": 0, "priceRange": { "min": 0, "max": 0 }, "location": "", "address": "", "openingHours": "", "isVeg": false, "spiceLevel": "medium", "knownFor": "", "ambiance": "fine-dining", "safetyScore": 9, "mustTry": [""], "tip": "", "imageSearch": "dish name food", "benefits": [""], "reviews": [{ "user": "Name", "rating": 5, "comment": "", "date": "2024-03" }] }],
   "dietaryNotes": [""],
-  "waterSafety": ""
+  "waterSafety": "",
+  "localEtiquette": ["food etiquette tip 1", "tip 2"],
+  "bestFoodAreas": ["area name 1", "area name 2"]
 }
-At least 3 items per category. Costs in INR. safetyScore 1-10.`;
+RULES:
+- At least 5 items per category (hiddenGems, budgetPicks, famousSpots). Costs in INR. safetyScore 1-10.
+- imageSearch: a 2-4 word search term for the dish photo (e.g., "butter chicken curry", "pav bhaji street food", "sushi platter")
+- benefits: 2-3 actual health/nutritional benefits of the dish
+- reviews: 2-3 realistic traveler reviews with name, rating (1-5), short comment, and month-year
+- address: specific street/area address
+- openingHours: typical opening hours in 12h format
+- isVeg: true if vegetarian, false if non-vegetarian
+- spiceLevel: one of mild, medium, hot, very-hot
+- knownFor: one engaging sentence about what makes this place special
+- ambiance: one of casual, fine-dining, street-side, rooftop, cozy-cafe, family-friendly
+- priceRange: min and max price per person in INR
+- localEtiquette: 3-4 local food etiquette tips for tourists
+- bestFoodAreas: top 3-4 food zones/streets in the destination`;
 
-      const result = await askAI("You are a food discovery AI. Respond with valid JSON only.", prompt);
+      const result = await generateAIResponse("You are a food discovery AI. Respond with valid JSON only.", prompt);
       res.json(result);
     } catch (error) {
       console.error("Food discovery error:", error);
@@ -264,7 +496,7 @@ At least 3 items per category. Costs in INR. safetyScore 1-10.`;
 }
 At least 2 budget and 2 premium options. Prices per night in INR. Scores 1-10.`;
 
-      const result = await askAI("You are a hotel analysis AI. Respond with valid JSON only.", prompt);
+      const result = await generateAIResponse("You are a hotel analysis AI. Respond with valid JSON only.", prompt);
       res.json(result);
     } catch (error) {
       console.error("Hotel intelligence error:", error);
@@ -284,14 +516,50 @@ At least 2 budget and 2 premium options. Prices per night in INR. Scores 1-10.`;
 {
   "destination": "${destination}",
   "days": ${days || 5},
-  "activities": [{ "name": "", "type": "cultural|adventure|relaxation|nightlife|nature|shopping", "cost": 0, "duration": "2h", "bestTime": "morning", "weatherDependent": false, "crowdLevel": "moderate", "rating": 4.5, "tip": "" }],
+  "activities": [{ 
+    "name": "", 
+    "type": "cultural|adventure|relaxation|nightlife|nature|shopping", 
+    "cost": 0, 
+    "priceRange": { "min": 0, "max": 0 },
+    "duration": "2h", 
+    "bestTime": "morning|afternoon|evening|night|anytime", 
+    "weatherDependent": false, 
+    "crowdLevel": "low|moderate|high", 
+    "rating": 4.5, 
+    "tip": "",
+    "imageSearch": "activity name place photo",
+    "location": "area/locality name",
+    "address": "specific address",
+    "openingHours": "9:00 AM - 6:00 PM",
+    "description": "2-3 sentence vivid description of this activity and why it's special",
+    "difficulty": "easy|moderate|challenging",
+    "ageGroup": "all-ages|adults|kids-friendly|seniors-friendly",
+    "accessibility": "wheelchair-friendly|partially-accessible|not-accessible",
+    "bestSeason": "summer|winter|monsoon|all-year",
+    "highlights": ["highlight 1", "highlight 2", "highlight 3"],
+    "benefits": ["benefit 1", "benefit 2"],
+    "reviews": [{ "user": "Name", "rating": 4.5, "comment": "review text", "date": "2024-01" }],
+    "nearbyFood": "nearby popular food spot name"
+  }],
   "packingList": [{ "item": "", "category": "clothes|tech|documents|medicine|misc", "essential": true }],
   "weatherForecast": "Expected weather description",
-  "bestTimeToVisit": "Best months to visit"
+  "bestTimeToVisit": "Best months to visit",
+  "localTips": ["local tip 1", "local tip 2", "local tip 3"],
+  "topAreas": ["top tourist area 1", "area 2"]
 }
-At least 8 activities and 12 packing items. Costs in INR.`;
+RULES:
+- At least 10 activities and 12 packing items. Costs in INR.
+- imageSearch: a 2-4 word term for finding a photo of this activity (e.g., "marine drive sunset mumbai", "scuba diving goa beach")
+- description: engaging 2-3 sentence description of the experience
+- highlights: 2-3 specific highlights or unique aspects
+- benefits: 2-3 benefits (physical, mental, cultural enrichment etc.)
+- reviews: 2-3 realistic traveler reviews with name, rating (1-5), short comment, and month-year
+- difficulty: how physically demanding the activity is
+- nearbyFood: a nearby popular food spot to visit after this activity
+- localTips: 3-4 general tips for tourists at this destination
+- topAreas: top 3-4 tourist areas or zones in the destination`;
 
-      const result = await askAI("You are a travel activity planner AI. Respond with valid JSON only.", prompt);
+      const result = await generateAIResponse("You are a travel activity planner AI. Respond with valid JSON only.", prompt);
       res.json(result);
     } catch (error) {
       console.error("Activity suggestion error:", error);

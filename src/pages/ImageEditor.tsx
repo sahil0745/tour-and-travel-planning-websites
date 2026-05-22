@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { showToast } from "../components/Toast";
 import { motion } from "framer-motion";
 import { ImagePlus, Upload, Wand2, Loader2, Download, Sparkles } from "lucide-react";
 
@@ -46,7 +47,7 @@ export default function ImageEditor() {
       setEditedImage(data.imageUrl);
     } catch (error) {
       console.error(error);
-      alert("Failed to edit image. Please try again.");
+      showToast("Failed to edit image. Please try again.", "error");
     } finally {
       setIsEditing(false);
     }

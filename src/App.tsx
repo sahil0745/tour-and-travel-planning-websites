@@ -2,14 +2,19 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { useEffect } from "react";
 import Navbar from "./components/Navbar";
 import PageTransition from "./components/PageTransition";
+import ScrollToTop from "./components/ScrollToTop";
+import Footer from "./components/Footer";
+import ToastContainer from "./components/Toast";
 import Home from "./pages/Home";
 import Planner from "./pages/Planner";
 import Dashboard from "./pages/Dashboard";
 import Safety from "./pages/Safety";
 import FoodExplorer from "./pages/FoodExplorer";
 import Activities from "./pages/Activities";
+import HotelExplorer from "./pages/HotelExplorer";
 import Profile from "./pages/Profile";
 import ImageEditor from "./pages/ImageEditor";
+import NotFound from "./pages/NotFound";
 import Chatbot from "./components/Chatbot";
 import { useThemeStore } from "./store";
 
@@ -31,6 +36,8 @@ export default function App() {
         </div>
 
         <Navbar />
+        <ScrollToTop />
+        <ToastContainer />
         <main className="pt-20 relative z-10">
           <PageTransition>
             <Routes>
@@ -40,11 +47,14 @@ export default function App() {
               <Route path="/safety" element={<Safety />} />
               <Route path="/food" element={<FoodExplorer />} />
               <Route path="/activities" element={<Activities />} />
+              <Route path="/hotels" element={<HotelExplorer />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/editor" element={<ImageEditor />} />
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </PageTransition>
         </main>
+        <Footer />
         <Chatbot />
       </div>
     </Router>

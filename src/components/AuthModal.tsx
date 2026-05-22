@@ -66,7 +66,8 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           >
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+              className="absolute top-4 right-4 p-2 text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] rounded-full transition-colors"
+              aria-label="Close auth modal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -75,7 +76,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               <h2 className="text-3xl font-bold font-display mb-2">
                 {isLogin ? "Welcome Back" : "Join AeroVoyage"}
               </h2>
-              <p className="text-zinc-400">
+              <p className="text-[var(--color-text-secondary)]">
                 {isLogin ? "Enter your details to access your account." : "Create an account to save your itineraries."}
               </p>
             </div>
@@ -96,7 +97,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Full Name"
-                    className="w-full bg-[var(--color-ocean)] border border-white/10 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-[var(--color-teal)] focus:ring-1 focus:ring-[var(--color-teal)] transition-all"
+                    className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl pl-12 pr-4 py-3 text-[var(--color-text)] focus:outline-none focus:border-[var(--color-teal)] focus:ring-1 focus:ring-[var(--color-teal)] transition-all"
                   />
                 </div>
               )}
@@ -126,7 +127,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               <button
                 type="submit"
                 disabled={isLoading}
-                className="glow-button w-full bg-[var(--color-ocean)] text-white font-semibold rounded-xl py-4 flex items-center justify-center gap-2 hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-[var(--color-teal)]/30 mt-6"
+                className="glow-button w-full bg-[var(--color-surface)] text-[var(--color-text)] font-semibold rounded-xl py-4 flex items-center justify-center gap-2 hover:bg-[var(--color-ocean)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-[var(--color-teal)]/30 mt-6"
               >
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : isLogin ? "Sign In" : "Create Account"}
               </button>
@@ -139,7 +140,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                   setIsLogin(!isLogin);
                   setError("");
                 }}
-                className="text-sm text-zinc-400 hover:text-white transition-colors"
+                className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
               >
                 {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
               </button>

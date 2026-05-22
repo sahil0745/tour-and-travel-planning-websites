@@ -1,25 +1,43 @@
 import { useState } from "react";
+import { showToast } from "../components/Toast";
 import { motion } from "framer-motion";
 import { Shield, Loader2, MapPin, AlertTriangle, Phone, Heart } from "lucide-react";
 import SafetyBadge from "../components/SafetyBadge";
 import type { SafetyResult } from "../types";
+import { useTripStore } from "../store";
 
 export default function Safety() {
   const [destination, setDestination] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SafetyResult | null>(null);
+  const [localResult, setLocalResult] = useState<SafetyResult | null>(null);
+
+  // Read from global store
+  const storeResult = useTripStore((s) => s.safetyResult);
+  const storeLoading = useTripStore((s) => s.safetyLoading);
+  const storeDestination = useTripStore((s) => s.destination);
+
+  // Use local result if user searched manually, otherwise use store result
+  const result = localResult || storeResult;
+  const isLoading = loading || storeLoading;
+
+  // Pre-fill the input with the store destination if user hasn't typed
+  const displayDestination = destination || storeDestination;
 
   const analyze = async () => {
-    if (!destination.trim()) return;
+    const searchDest = destination.trim() || storeDestination;
+    if (!searchDest) return;
     setLoading(true);
     try {
       const r = await fetch("/api/safety-score", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ destination }),
+        body: JSON.stringify({ destination: searchDest }),
       });
       if (!r.ok) throw new Error();
-      setResult(await r.json());
-    } catch { alert("Failed to analyze safety."); }
+      const data = await r.json();
+      setLocalResult(data);
+      // Also update global store
+      useTripStore.getState().setSafetyResult(data);
+    } catch { showToast("Failed to analyze safety.", "error"); }
     finally { setLoading(false); }
   };
 
@@ -38,19 +56,27 @@ export default function Safety() {
       <div className="glass-card p-6 rounded-3xl mb-8 flex gap-4">
         <div className="flex-1 relative">
           <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--color-text-secondary)]" />
-          <input value={destination} onChange={e => setDestination(e.target.value)}
+          <input value={displayDestination} onChange={e => setDestination(e.target.value)}
             onKeyDown={e => e.key === "Enter" && analyze()}
             placeholder="Enter destination (e.g., Bangkok, Cairo, Goa)"
             className="w-full bg-[var(--color-navy)]/50 border border-[var(--color-border)] rounded-xl pl-12 pr-4 py-3 text-[var(--color-text)] focus:outline-none focus:border-[var(--color-teal)] transition-all"
           />
         </div>
-        <button onClick={analyze} disabled={loading || !destination.trim()}
+        <button onClick={analyze} disabled={isLoading || !(destination.trim() || storeDestination)}
           className="btn-primary px-8 py-3 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50"
         >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
-          {loading ? "Analyzing…" : "Analyze"}
+          {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
+          {isLoading ? "Analyzing…" : "Analyze"}
         </button>
       </div>
+
+      {/* Loading State */}
+      {isLoading && !result && (
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 className="w-10 h-10 animate-spin text-[var(--color-teal)] mb-4" />
+          <p className="text-[var(--color-text-secondary)]">Analyzing safety for {displayDestination}…</p>
+        </div>
+      )}
 
       {result && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
